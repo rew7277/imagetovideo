@@ -1,4 +1,5 @@
-import os, io, uuid, time, base64, requests, numpy as np, shutil
+import os, io, uuid, time, base64, numpy as np
+import httpx                          # replaces requests for HF calls
 from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 from PIL import Image, ImageFilter
@@ -9,70 +10,45 @@ CORS(app)
 OUTPUT_FOLDER = 'outputs'
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-HF_API_KEY = os.environ.get('HF_API_KEY', '')
-
-# Disable Accept-Encoding so HF never sends gzip/chunked compressed bodies
-# — a primary cause of IncompleteRead on Railway's proxy layer.
-HF_HEADERS = {
-    "Authorization": f"Bearer {HF_API_KEY}",
-    "Accept-Encoding": "identity",   # <-- critical fix
-}
-MAX_FILE_SIZE = 10 * 1024 * 1024
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+HF_API_KEY  = os.environ.get('HF_API_KEY', '')
+HF_HEADERS  = {"Authorization": f"Bearer {HF_API_KEY}"}
+MAX_FILE_SIZE       = 10 * 1024 * 1024
+ALLOWED_EXTENSIONS  = {'png', 'jpg', 'jpeg', 'webp'}
 
 
-def safe_hf_post(url, data, timeout=90, retries=3):
-    """
-    POST to HuggingFace Inference API with robust response reading.
+# ── Why httpx instead of requests? ────────────────────────────────────────────
+# requests → urllib3 → http.client._safe_read() enforces Content-Length
+# strictly and raises IncompleteRead when Railway's proxy drops the TCP
+# connection mid-transfer.  httpx uses httpcore, a completely separate
+# transport layer that reads chunked responses without that check.
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Root cause of IncompleteRead:
-      requests uses http.client under the hood. When the server sends a
-      chunked or gzip-compressed response and the TCP connection hiccups
-      (common on Railway's proxy), iter_content / .content raise
-      IncompleteRead mid-stream.
-
-    Fix:
-      1. 'Accept-Encoding: identity' tells HF not to gzip the response,
-         eliminating decompression errors entirely.
-      2. stream=True + resp.raw.read(decode_content=True) reads via
-         urllib3's socket layer which handles chunked encoding natively
-         without triggering http.client's stricter length checks.
-      3. Retry up to `retries` times with exponential back-off.
-    """
-    delay = 5
+def safe_hf_post(url: str, data: bytes, timeout: int = 90, retries: int = 3) -> httpx.Response | None:
+    """POST to HuggingFace Inference API via httpx (immune to IncompleteRead)."""
     for attempt in range(retries):
         try:
-            resp = requests.post(
-                url,
-                headers=HF_HEADERS,
-                data=data,
-                timeout=timeout,
-                stream=True,            # don't buffer in requests
-            )
+            with httpx.Client(timeout=httpx.Timeout(timeout, connect=15)) as client:
+                resp = client.post(url, headers=HF_HEADERS, content=data)
 
-            # HF returns 503 when the model is loading — wait and retry
             if resp.status_code == 503:
-                wait = 20 + delay * attempt
-                app.logger.warning(f"HF 503 on attempt {attempt+1}, waiting {wait}s")
-                resp.close()
+                wait = 20 + 5 * attempt
+                app.logger.warning(f"HF 503 – model loading, waiting {wait}s (attempt {attempt+1})")
                 time.sleep(wait)
                 continue
 
-            # Read via urllib3 raw socket — bypasses http.client IncompleteRead
-            raw_content = resp.raw.read(decode_content=True)
-            resp._content = raw_content          # make .content work normally
-            resp._content_consumed = True
             return resp
 
+        except httpx.ReadError as e:
+            app.logger.warning(f"HF httpx ReadError attempt {attempt+1}: {e}")
+        except httpx.TimeoutException as e:
+            app.logger.warning(f"HF httpx Timeout attempt {attempt+1}: {e}")
         except Exception as e:
-            app.logger.warning(f"HF request attempt {attempt+1} failed: {e}")
-            if attempt == retries - 1:
-                raise RuntimeError(
-                    f"HF API failed after {retries} attempts: {e}"
-                ) from e
-            time.sleep(delay * (attempt + 1))
+            app.logger.warning(f"HF httpx error attempt {attempt+1}: {e}")
 
-    return None
+        if attempt < retries - 1:
+            time.sleep(5 * (attempt + 1))
+
+    raise RuntimeError(f"HF API unreachable after {retries} attempts")
 
 
 def allowed_file(filename):
@@ -118,7 +94,7 @@ def depth_estimation():
             resp = safe_hf_post(api_url, img_bytes.read(), timeout=90)
             if resp is None or resp.status_code != 200:
                 status = resp.status_code if resp else 'N/A'
-                body   = resp.text[:200] if resp else ''
+                body   = resp.text[:300] if resp else ''
                 return jsonify({'error': f'HF API error {status}: {body}'}), 500
             depth_img = Image.open(io.BytesIO(resp.content)).convert('L')
 
@@ -193,7 +169,7 @@ def image_to_video():
         if not video_path or not os.path.exists(video_path):
             return jsonify({'error': 'Video generation failed'}), 500
         fname = os.path.basename(video_path)
-        fmt   = os.path.splitext(fname)[1].lstrip('.')   # 'gif' or 'mp4'
+        fmt   = os.path.splitext(fname)[1].lstrip('.')  # 'gif' or 'mp4'
         return jsonify({
             'success': True, 'uid': uid,
             'video_url':    f'/api/stream/{fname}',
@@ -214,10 +190,10 @@ def generate_parallax_video(img, uid, motion_type='parallax'):
     for i in range(total_frames):
         t = i / total_frames
         if motion_type == 'zoom':
-            scale = 1.0 + 0.12 * np.sin(t * np.pi)
+            scale  = 1.0 + 0.12 * np.sin(t * np.pi)
             nw, nh = int(w * scale), int(h * scale)
-            frame = img.resize((nw, nh), Image.LANCZOS).crop(
-                ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h)
+            frame  = img.resize((nw, nh), Image.LANCZOS).crop(
+                ((nw-w)//2, (nh-h)//2, (nw-w)//2+w, (nh-h)//2+h)
             )
         elif motion_type == 'ken_burns':
             scale  = 1.0 + 0.18 * t
@@ -225,18 +201,16 @@ def generate_parallax_video(img, uid, motion_type='parallax'):
             frame  = img.resize((nw, nh), Image.LANCZOS)
             left   = int((nw - w) * t * 0.5)
             top    = int((nh - h) * t * 0.3)
-            frame  = frame.crop((left, top, left + w, top + h))
+            frame  = frame.crop((left, top, left+w, top+h))
         else:
             shift = int(18 * np.sin(2 * np.pi * t))
             frame = Image.fromarray(np.roll(img_np, shift, axis=1))
         frames.append(frame.convert('P', palette=Image.ADAPTIVE, colors=256))
 
     gif_path = os.path.join(OUTPUT_FOLDER, f'{uid}_video.gif')
-    frames[0].save(
-        gif_path, save_all=True, append_images=frames[1:],
-        loop=0, duration=int(1000 / fps)
-    )
-    return gif_path   # .gif served directly — no mp4 copy needed
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:],
+                   loop=0, duration=int(1000/fps))
+    return gif_path   # serve .gif directly — no mp4 copy needed
 
 
 def generate_svd_video(img, uid):
@@ -251,7 +225,6 @@ def generate_svd_video(img, uid):
         with open(p, 'wb') as f:
             f.write(resp.content)
         return p
-    # Fall back to local Ken Burns if SVD fails
     return generate_parallax_video(img, uid, 'ken_burns')
 
 
