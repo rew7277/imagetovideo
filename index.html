@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DEPTH·FORGE — 2D to 3D & Image to Video</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #080b10;
+    --panel: #0d1117;
+    --border: #1e2d3d;
+    --accent: #00e5ff;
+    --accent2: #ff3d71;
+    --accent3: #a259ff;
+    --text: #c9d1d9;
+    --muted: #4a5568;
+    --glow: 0 0 20px rgba(0,229,255,0.3);
+    --glow2: 0 0 20px rgba(255,61,113,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 36px 0 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .logo h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #fff;
+  }
+
+  .logo h1 span { color: var(--accent); }
+
+  .logo .tagline {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin: 36px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    width: fit-content;
+  }
+
+  .tab-btn {
+    padding: 12px 28px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+    position: relative;
+  }
+
+  .tab-btn.active {
+    background: rgba(0,229,255,0.08);
+    color: var(--accent);
+  }
+
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .tab-btn:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.03); }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Upload Zone ── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 48px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--panel);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(0,229,255,0.05) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .upload-zone:hover::before, .upload-zone.drag-over::before { opacity: 1; }
+
+  .upload-icon {
+    width: 56px; height: 56px;
+    margin: 0 auto 16px;
+    opacity: 0.5;
+  }
+
+  .upload-zone h3 {
+    font-size: 1.1rem;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+
+  .upload-zone p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .upload-zone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* ── Preview & Controls ── */
+  .controls-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .select-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .select-group label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .select-group select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.9rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .select-group select:focus { border-color: var(--accent); }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:hover { box-shadow: var(--glow); transform: translateY(-1px); }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+
+  .btn-outline:hover { background: rgba(0,229,255,0.08); }
+
+  .btn-red {
+    background: var(--accent2);
+    color: #fff;
+  }
+
+  .btn-red:hover { box-shadow: var(--glow2); transform: translateY(-1px); }
+
+  /* ── Progress ── */
+  .progress-wrap {
+    margin-top: 20px;
+    display: none;
+  }
+
+  .progress-wrap.visible { display: block; }
+
+  .progress-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .progress-fill.indeterminate {
+    width: 40%;
+    animation: slide 1.5s infinite ease-in-out;
+  }
+
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  /* ── Results Grid ── */
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 28px;
+  }
+
+  .result-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .result-card:hover { border-color: var(--accent); }
+
+  .result-card img, .result-card video {
+    width: 100%;
+    display: block;
+    aspect-ratio: 4/3;
+    object-fit: cover;
+  }
+
+  .result-card-footer {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+  }
+
+  .result-card-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ── Error ── */
+  .error-box {
+    background: rgba(255,61,113,0.08);
+    border: 1px solid rgba(255,61,113,0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--accent2);
+    display: none;
+  }
+
+  .error-box.visible { display: block; }
+
+  /* ── Info banner ── */
+  .info-banner {
+    background: rgba(0,229,255,0.05);
+    border: 1px solid rgba(0,229,255,0.15);
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .info-banner strong { color: #fff; }
+
+  /* ── Preview thumbnail ── */
+  .preview-thumb {
+    display: none;
+    margin-top: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    max-height: 200px;
+  }
+
+  .preview-thumb img {
+    width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    background: #000;
+  }
+
+  .preview-thumb.visible { display: block; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 60px;
+    padding: 24px 0;
+    text-align: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  /* ── Anaglyph note ── */
+  .anaglyph-note {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  @media (max-width: 600px) {
+    .upload-zone { padding: 28px 16px; }
+    .results-grid { grid-template-columns: 1fr; }
+    .tabs { width: 100%; }
+    .tab-btn { flex: 1; text-align: center; padding: 12px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="logo">
+      <div>
+        <h1>DEPTH·<span>FORGE</span></h1>
+        <div class="tagline">2D → 3D &amp; Image → Video Engine</div>
+      </div>
+    </div>
+    <div class="status-dot" id="statusDot" title="System Online"></div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('depth')">⬛ 2D → 3D Depth</button>
+    <button class="tab-btn" onclick="switchTab('video')">▶ Image → Video</button>
+  </div>
+
+  <!-- ── TAB 1: DEPTH / 3D ── -->
+  <div class="tab-panel active" id="tab-depth">
+    <div class="info-banner">
+      <strong>How it works:</strong> Upload any image → AI estimates depth using Intel DPT-Large →
+      generates a <strong>depth map</strong> + <strong>Red-Cyan 3D anaglyph</strong> (view with red-cyan glasses for true 3D effect).
+      No HF key = demo mode with gradient depth estimation.
+    </div>
+
+    <div class="upload-zone" id="depthZone">
+      <input type="file" accept="image/png,image/jpeg,image/webp" id="depthInput" onchange="handleDepthFile(this)"/>
+      <svg class="upload-icon" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="56" height="56" rx="12" fill="rgba(0,229,255,0.08)" stroke="rgba(0,229,255,0.2)" stroke-width="1.5"/>
+        <path d="M28 36V20M28 20L22 26M28 20L34 26" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M18 38h20" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+      </svg>
+      <h3>Drop image here or click to upload</h3>
+      <p>PNG · JPG · WEBP · Max 10MB</p>
+    </div>
+
+    <div class="preview-thumb" id="depthPreview">
+      <img id="depthPreviewImg" src="" alt="preview"/>
+    </div>
+
+    <div class="controls-row">
+      <button class="btn btn-primary" id="depthBtn" onclick="processDepth()" disabled>
+        <span>⬛</span> Generate 3D
+      </button>
+      <button class="btn btn-outline" onclick="resetDepth()">Reset</button>
+    </div>
+
+    <div class="progress-wrap" id="depthProgress">
+      <div class="progress-label">
+        <span id="depthProgressLabel">Processing depth estimation...</span>
+        <span id="depthProgressPct"></span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill indeterminate" id="depthFill"></div></div>
+    </div>
+
+    <div class="error-box" id="depthError"></div>
+
+    <div class="results-grid" id="depthResults"></div>
+  </div>
+
+  <!-- ── TAB 2: VIDEO ── -->
+  <div class="tab-panel" id="tab-video">
+    <div class="info-banner">
+      <strong>How it works:</strong> Upload an image → choose a motion style →
+      generates an animated MP4 video. <strong>Parallax</strong> = horizontal sway,
+      <strong>Zoom</strong> = smooth zoom pulse, <strong>Ken Burns</strong> = cinematic pan+zoom.
+      With HF API key: AI-powered Stable Video Diffusion (SVD) mode.
+    </div>
+
+    <div class="upload-zone" id="videoZone">
+      <input type="file" accept="image/png,image/jpeg,image/webp" id="videoInput" onchange="handleVideoFile(this)"/>
+      <svg class="upload-icon" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="56" height="56" rx="12" fill="rgba(162,89,255,0.08)" stroke="rgba(162,89,255,0.2)" stroke-width="1.5"/>
+        <path d="M20 20h16a2 2 0 012 2v12a2 2 0 01-2 2H20a2 2 0 01-2-2V22a2 2 0 012-2z" stroke="#a259ff" stroke-width="1.5"/>
+        <path d="M38 26l4-2v8l-4-2" stroke="#a259ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h3>Drop image here or click to upload</h3>
+      <p>PNG · JPG · WEBP · Max 10MB</p>
+    </div>
+
+    <div class="preview-thumb" id="videoPreview">
+      <img id="videoPreviewImg" src="" alt="preview"/>
+    </div>
+
+    <div class="controls-row">
+      <div class="select-group">
+        <label>Motion Style</label>
+        <select id="motionSelect">
+          <option value="parallax">Parallax Sway</option>
+          <option value="zoom">Zoom Pulse</option>
+          <option value="ken_burns">Ken Burns (Pan+Zoom)</option>
+          <option value="svd">AI: Stable Video Diffusion</option>
+        </select>
+      </div>
+      <button class="btn btn-red" id="videoBtn" onclick="processVideo()" disabled>
+        <span>▶</span> Generate Video
+      </button>
+      <button class="btn btn-outline" onclick="resetVideo()">Reset</button>
+    </div>
+
+    <div class="progress-wrap" id="videoProgress">
+      <div class="progress-label">
+        <span id="videoProgressLabel">Generating video frames...</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill indeterminate" id="videoFill"></div></div>
+    </div>
+
+    <div class="error-box" id="videoError"></div>
+
+    <div class="results-grid" id="videoResults"></div>
+  </div>
+
+</div>
+
+<footer>
+  <div class="container">
+    DEPTH·FORGE · Built with Flask + HuggingFace Inference API · Deploy on Railway
+  </div>
+</footer>
+
+<script>
+// ── State ──
+let depthFile = null;
+let videoFile = null;
+
+// ── Tab switch ──
+function switchTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── File handlers ──
+function handleDepthFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  depthFile = file;
+  showPreview(file, 'depthPreviewImg', 'depthPreview');
+  document.getElementById('depthBtn').disabled = false;
+  clearError('depthError');
+}
+
+function handleVideoFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  videoFile = file;
+  showPreview(file, 'videoPreviewImg', 'videoPreview');
+  document.getElementById('videoBtn').disabled = false;
+  clearError('videoError');
+}
+
+function showPreview(file, imgId, wrapId) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById(imgId).src = e.target.result;
+    document.getElementById(wrapId).classList.add('visible');
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Drag & drop ──
+['depthZone', 'videoZone'].forEach(id => {
+  const zone = document.getElementById(id);
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const inputId = id === 'depthZone' ? 'depthInput' : 'videoInput';
+    const input = document.getElementById(inputId);
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change'));
+  });
+});
+
+// ── Depth processing ──
+async function processDepth() {
+  if (!depthFile) return;
+
+  const btn = document.getElementById('depthBtn');
+  btn.disabled = true;
+  document.getElementById('depthResults').innerHTML = '';
+  clearError('depthError');
+  showProgress('depthProgress', 'depthProgressLabel', 'Calling depth AI model...');
+
+  const fd = new FormData();
+  fd.append('file', depthFile);
+
+  try {
+    const res = await fetch('/api/depth', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    hideProgress('depthProgress');
+
+    if (!data.success) {
+      showError('depthError', data.error || 'Unknown error');
+      btn.disabled = false;
+      return;
+    }
+
+    // Render results
+    const grid = document.getElementById('depthResults');
+    grid.innerHTML = `
+      ${resultCard('Original', `data:image/jpeg;base64,${data.original}`, null, null)}
+      ${resultCard('Depth Map', `data:image/png;base64,${data.depth_map}`, data.download_depth, 'Download Depth')}
+      ${resultCard('3D Anaglyph', `data:image/png;base64,${data.anaglyph_3d}`, data.download_3d, 'Download 3D')}
+    `;
+
+    // Add anaglyph note
+    grid.insertAdjacentHTML('afterend',
+      '<p class="anaglyph-note">🔴🔵 View the 3D Anaglyph image with Red-Cyan glasses for true stereoscopic 3D effect.</p>');
+
+  } catch(e) {
+    hideProgress('depthProgress');
+    showError('depthError', 'Network error: ' + e.message);
+    btn.disabled = false;
+  }
+
+  btn.disabled = false;
+}
+
+// ── Video processing ──
+async function processVideo() {
+  if (!videoFile) return;
+
+  const btn = document.getElementById('videoBtn');
+  btn.disabled = true;
+  document.getElementById('videoResults').innerHTML = '';
+  clearError('videoError');
+
+  const motion = document.getElementById('motionSelect').value;
+  const labels = {
+    parallax: 'Generating parallax frames...',
+    zoom: 'Generating zoom animation...',
+    ken_burns: 'Applying Ken Burns effect...',
+    svd: 'Running Stable Video Diffusion (60–120s)...'
+  };
+  showProgress('videoProgress', 'videoProgressLabel', labels[motion] || 'Processing...');
+
+  const fd = new FormData();
+  fd.append('file', videoFile);
+  fd.append('motion', motion);
+
+  try {
+    const res = await fetch('/api/img2video', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    hideProgress('videoProgress');
+
+    if (!data.success) {
+      showError('videoError', data.error || 'Unknown error');
+      btn.disabled = false;
+      return;
+    }
+
+    const grid = document.getElementById('videoResults');
+    grid.innerHTML = `
+      <div class="result-card">
+        <video controls autoplay loop muted playsinline
+          src="data:video/mp4;base64,${data.video_b64}">
+        </video>
+        <div class="result-card-footer">
+          <span class="result-card-title">Generated Video</span>
+          <a href="${data.download_url}" class="btn btn-outline" style="padding:6px 14px;font-size:0.75rem;" download>↓ Download MP4</a>
+        </div>
+      </div>
+    `;
+
+  } catch(e) {
+    hideProgress('videoProgress');
+    showError('videoError', 'Network error: ' + e.message);
+    btn.disabled = false;
+  }
+
+  btn.disabled = false;
+}
+
+// ── Helpers ──
+function resultCard(title, imgSrc, dlUrl, dlLabel) {
+  return `
+    <div class="result-card">
+      <img src="${imgSrc}" alt="${title}" loading="lazy"/>
+      <div class="result-card-footer">
+        <span class="result-card-title">${title}</span>
+        ${dlUrl ? `<a href="${dlUrl}" class="btn btn-outline" style="padding:6px 14px;font-size:0.75rem;" download>${dlLabel || '↓ Download'}</a>` : ''}
+      </div>
+    </div>`;
+}
+
+function showProgress(wrapId, labelId, msg) {
+  document.getElementById(wrapId).classList.add('visible');
+  if (labelId) document.getElementById(labelId).textContent = msg;
+}
+
+function hideProgress(wrapId) {
+  document.getElementById(wrapId).classList.remove('visible');
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}
+
+function clearError(id) {
+  const el = document.getElementById(id);
+  el.textContent = '';
+  el.classList.remove('visible');
+}
+
+function resetDepth() {
+  depthFile = null;
+  document.getElementById('depthInput').value = '';
+  document.getElementById('depthPreview').classList.remove('visible');
+  document.getElementById('depthBtn').disabled = true;
+  document.getElementById('depthResults').innerHTML = '';
+  clearError('depthError');
+  hideProgress('depthProgress');
+  // Remove anaglyph note if exists
+  const note = document.querySelector('.anaglyph-note');
+  if (note) note.remove();
+}
+
+function resetVideo() {
+  videoFile = null;
+  document.getElementById('videoInput').value = '';
+  document.getElementById('videoPreview').classList.remove('visible');
+  document.getElementById('videoBtn').disabled = true;
+  document.getElementById('videoResults').innerHTML = '';
+  clearError('videoError');
+  hideProgress('videoProgress');
+}
+
+// ── Health check ──
+fetch('/health').then(r => r.json()).then(d => {
+  const dot = document.getElementById('statusDot');
+  dot.style.background = d.hf_key_set ? '#00e5ff' : '#ffd700';
+  dot.title = d.hf_key_set ? 'HuggingFace API Connected' : 'Demo Mode (no HF key)';
+}).catch(() => {
+  document.getElementById('statusDot').style.background = '#ff3d71';
+});
+</script>
+</body>
+</html>
