@@ -5,7 +5,7 @@ import time
 import base64
 import requests
 import numpy as np
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, render_template
 from flask_cors import CORS
 from PIL import Image
 import json
@@ -39,7 +39,7 @@ def base64_to_image(b64: str) -> Image.Image:
 
 @app.route('/')
 def index():
-    return send_from_directory('templates', 'index.html')
+    return render_template('index.html')
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
