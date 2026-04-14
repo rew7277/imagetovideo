@@ -106,8 +106,8 @@ def image_to_video():
         uid = str(uuid.uuid4())[:8]
         video_path = generate_svd_video(img, uid) if (HF_API_KEY and motion_type == 'svd') else generate_parallax_video(img, uid, motion_type)
         if not video_path or not os.path.exists(video_path): return jsonify({'error': 'Video generation failed'}), 500
-        with open(video_path, 'rb') as f: video_b64 = base64.b64encode(f.read()).decode()
-        return jsonify({'success': True, 'uid': uid, 'video_b64': video_b64, 'download_url': f'/api/download/{uid}_video.mp4'})
+        fname = os.path.basename(video_path)
+        return jsonify({'success': True, 'uid': uid, 'video_url': f'/api/stream/{fname}', 'download_url': f'/api/download/{fname}'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -144,6 +144,15 @@ def generate_svd_video(img, uid):
         with open(p, 'wb') as f: f.write(resp.content)
         return p
     return generate_parallax_video(img, uid, 'ken_burns')
+
+@app.route('/api/stream/<filename>')
+def stream_file(filename):
+    safe = os.path.basename(filename)
+    fp = os.path.join(OUTPUT_FOLDER, safe)
+    if not os.path.exists(fp): return jsonify({'error': 'File not found'}), 404
+    # Serve GIF as image/gif, mp4 as video/mp4
+    mime = 'image/gif' if safe.endswith('.gif') else 'video/mp4'
+    return send_file(fp, mimetype=mime, conditional=True)
 
 @app.route('/api/download/<filename>')
 def download_file(filename):

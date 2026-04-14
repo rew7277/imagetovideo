@@ -701,14 +701,17 @@ async function processVideo() {
     }
 
     const grid = document.getElementById('videoResults');
+    // Use direct URL streaming - no base64 blob (avoids IncompleteRead errors)
+    const isGif = data.video_url && data.video_url.endsWith('.gif');
+    const mediaTag = isGif
+      ? `<img src="${data.video_url}" alt="Generated Animation" style="width:100%;display:block;aspect-ratio:4/3;object-fit:cover;"/>`
+      : `<video controls autoplay loop muted playsinline src="${data.video_url}" style="width:100%;display:block;aspect-ratio:4/3;object-fit:cover;"></video>`;
     grid.innerHTML = `
       <div class="result-card">
-        <video controls autoplay loop muted playsinline
-          src="data:video/mp4;base64,${data.video_b64}">
-        </video>
+        ${mediaTag}
         <div class="result-card-footer">
-          <span class="result-card-title">Generated Video</span>
-          <a href="${data.download_url}" class="btn btn-outline" style="padding:6px 14px;font-size:0.75rem;" download>↓ Download MP4</a>
+          <span class="result-card-title">Generated ${isGif ? 'Animation' : 'Video'}</span>
+          <a href="${data.download_url}" class="btn btn-outline" style="padding:6px 14px;font-size:0.75rem;" download>↓ Download</a>
         </div>
       </div>
     `;
