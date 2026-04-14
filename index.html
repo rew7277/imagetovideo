@@ -702,7 +702,7 @@ async function processVideo() {
 
     const grid = document.getElementById('videoResults');
     // Use direct URL streaming - no base64 blob (avoids IncompleteRead errors)
-    const isGif = data.video_url && data.video_url.endsWith('.gif');
+    const isGif = data.format === 'gif';
     const mediaTag = isGif
       ? `<img src="${data.video_url}" alt="Generated Animation" style="width:100%;display:block;aspect-ratio:4/3;object-fit:cover;"/>`
       : `<video controls autoplay loop muted playsinline src="${data.video_url}" style="width:100%;display:block;aspect-ratio:4/3;object-fit:cover;"></video>`;

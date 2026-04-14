@@ -1,4 +1,6 @@
 import os, io, uuid, time, base64, requests, numpy as np, shutil
+from http.client import IncompleteRead
+from requests.exceptions import ChunkedEncodingError
 from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 from PIL import Image, ImageFilter
@@ -13,6 +15,23 @@ HF_API_KEY = os.environ.get('HF_API_KEY', '')
 HF_HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+
+def safe_post(url, headers, data, timeout=60, retries=2):
+    """POST to HF API with streaming read to avoid IncompleteRead errors."""
+    for attempt in range(retries):
+        try:
+            resp = requests.post(url, headers=headers, data=data, timeout=timeout, stream=True)
+            if resp.status_code == 503 and attempt == 0:
+                time.sleep(20)
+                continue
+            content = b''.join(resp.iter_content(chunk_size=8192))
+            resp._content = content
+            return resp
+        except (ChunkedEncodingError, IncompleteRead, requests.exceptions.ConnectionError) as e:
+            if attempt == retries - 1:
+                raise RuntimeError(f'HF API connection failed after {retries} attempts: {e}')
+            time.sleep(5)
+    return None
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -46,14 +65,11 @@ def depth_estimation():
             depth_img = generate_demo_depth(img)
         else:
             api_url = "https://api-inference.huggingface.co/models/Intel/dpt-large"
-            resp = requests.post(api_url, headers=HF_HEADERS, data=img_bytes.read(), timeout=60)
+            resp = safe_post(api_url, HF_HEADERS, img_bytes.read(), timeout=60)
+            if resp is None:
+                return jsonify({'error': 'HF API request failed'}), 500
             if resp.status_code == 200:
                 depth_img = Image.open(io.BytesIO(resp.content)).convert('L')
-            elif resp.status_code == 503:
-                time.sleep(20); img_bytes.seek(0)
-                resp = requests.post(api_url, headers=HF_HEADERS, data=img_bytes.read(), timeout=60)
-                depth_img = Image.open(io.BytesIO(resp.content)).convert('L') if resp.status_code == 200 else None
-                if not depth_img: return jsonify({'error': f'HF model loading failed: {resp.text}'}), 500
             else:
                 return jsonify({'error': f'HF API error {resp.status_code}: {resp.text}'}), 500
         uid = str(uuid.uuid4())[:8]
@@ -107,7 +123,8 @@ def image_to_video():
         video_path = generate_svd_video(img, uid) if (HF_API_KEY and motion_type == 'svd') else generate_parallax_video(img, uid, motion_type)
         if not video_path or not os.path.exists(video_path): return jsonify({'error': 'Video generation failed'}), 500
         fname = os.path.basename(video_path)
-        return jsonify({'success': True, 'uid': uid, 'video_url': f'/api/stream/{fname}', 'download_url': f'/api/download/{fname}'})
+        ext = os.path.splitext(fname)[1].lower()  # .gif or .mp4
+        return jsonify({'success': True, 'uid': uid, 'video_url': f'/api/stream/{fname}', 'download_url': f'/api/download/{fname}', 'format': ext.lstrip('.')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -129,17 +146,17 @@ def generate_parallax_video(img, uid, motion_type='parallax'):
             shift = int(18 * np.sin(2*np.pi*t))
             frame = Image.fromarray(np.roll(img_np, shift, axis=1))
         frames.append(frame.convert('P', palette=Image.ADAPTIVE, colors=256))
-    output_path = os.path.join(OUTPUT_FOLDER, f'{uid}_video.mp4')
-    gif_path = output_path.replace('.mp4', '.gif')
+    gif_path = os.path.join(OUTPUT_FOLDER, f'{uid}_video.gif')
     frames[0].save(gif_path, save_all=True, append_images=frames[1:], loop=0, duration=int(1000/fps))
-    shutil.copy(gif_path, output_path)
-    return output_path
+    return gif_path  # Return .gif directly — no mp4 copy needed
 
 def generate_svd_video(img, uid):
     buf = io.BytesIO(); img.save(buf, format='JPEG', quality=90)
-    resp = requests.post("https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt",
-        headers=HF_HEADERS, data=buf.getvalue(), timeout=300)
-    if resp.status_code == 200:
+    resp = safe_post(
+        "https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt",
+        HF_HEADERS, buf.getvalue(), timeout=300
+    )
+    if resp and resp.status_code == 200:
         p = os.path.join(OUTPUT_FOLDER, f'{uid}_video.mp4')
         with open(p, 'wb') as f: f.write(resp.content)
         return p
