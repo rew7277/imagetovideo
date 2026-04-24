@@ -1,51 +1,39 @@
-# FreeCut Studio V5 Railway Final Fix
+# FreeCut Studio V6 Port Final Fix
 
-This build fixes the Railway error:
+This version fixes the Railway error:
 
 ```text
-The executable `/opt/venv/bin/uvicorn` could not be found.
+Invalid value for '--port': '${PORT:-8000}' is not a valid integer.
 ```
 
-## Why this works
+## What changed
 
-Railway is forcing this command:
+Railway is passing `${PORT:-8000}` as a literal string without shell expansion.
+This Dockerfile creates a smart `/opt/venv/bin/uvicorn` wrapper that replaces the broken literal port with the real `$PORT`, or defaults to `8082`.
 
-```bash
-/opt/venv/bin/uvicorn
+## Railway Networking
+
+Your Railway public networking target port is:
+
+```text
+8082
 ```
 
-So this Dockerfile creates that executable as a wrapper:
-
-```bash
-/opt/venv/bin/uvicorn -> python -m uvicorn
-```
+This project defaults to `8082` and exposes `8082`.
 
 ## Deploy Steps
 
 1. Extract this zip.
-2. Push all files to GitHub repository root.
-3. Railway → New Project → Deploy from GitHub.
-4. In Railway service settings, remove any old custom start command if present.
-5. Redeploy.
+2. Push files directly to GitHub root.
+3. Railway → redeploy.
+4. Keep public networking target port as `8082`.
+5. Healthcheck path: `/health`.
 
-## Healthcheck
+## If still failing
 
-```text
-/health
+In Railway → Service → Settings → Start Command, remove any custom command.
+If you must keep one, use:
+
+```bash
+sh -c 'python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8082}'
 ```
-
-## Features
-
-- FastAPI app
-- Railway Docker deployment
-- `/health` and `/ready`
-- Video upload
-- Video trim
-- Resize
-- Mute audio
-- Add caption text
-- MP4 conversion
-
-## Important
-
-This version prioritizes successful Railway deployment. Full AI background removal can be added after this base deployment is stable.

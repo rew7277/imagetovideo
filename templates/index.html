@@ -12,7 +12,7 @@
       <div class="logo">FC</div>
       <div>
         <h1>FreeCut Studio</h1>
-        <p>Railway-ready free video editor MVP</p>
+        <p>Railway-ready video editor MVP</p>
       </div>
     </div>
     <a href="/health" class="chip">Health Check</a>
@@ -21,11 +21,11 @@
   <main class="container">
     <section class="hero">
       <div>
-        <span class="pill">Railway Final Fix</span>
+        <span class="pill">V6 Port Final Fix</span>
         <h2>Edit videos online with a clean Canva-style starter.</h2>
         <p>
-          Upload a video, trim it, resize it, mute audio, add caption text, and export MP4.
-          This build includes the Railway /opt/venv/bin/uvicorn compatibility fix.
+          Upload a video, trim, resize, mute audio, add caption text, and export MP4.
+          This version handles Railway's literal port issue automatically.
         </p>
       </div>
 
@@ -64,15 +64,13 @@
       </form>
 
       <form class="panel" id="bgForm">
-        <h3>Background Tool</h3>
+        <h3>Video Processor</h3>
         <p class="muted">
-          This Railway-safe version converts your video to browser-compatible MP4.
-          Full AI background removal can be added after deployment is stable.
+          Converts uploaded video to browser-compatible MP4. AI background removal can be added after stable deployment.
         </p>
 
         <label>Mode</label>
         <select name="mode">
-          <option value="green">Green screen placeholder</option>
           <option value="convert">Convert only</option>
         </select>
 

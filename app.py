@@ -29,7 +29,7 @@ async def health():
     return {
         "status": "ok",
         "service": APP_NAME,
-        "port": os.getenv("PORT", "8080")
+        "port": os.getenv("PORT", "8082")
     }
 
 
@@ -123,17 +123,14 @@ async def edit_video(
 
 
 @app.post("/remove-background")
-async def remove_background_placeholder(
+async def process_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    mode: str = Form("green")
+    mode: str = Form("convert")
 ):
-    # Railway-safe placeholder background flow.
-    # This keeps deploy stable. Full AI background removal can be enabled after Railway app starts.
-    # Current behavior: converts uploaded video to browser-safe MP4.
     ext = Path(file.filename or "video.mp4").suffix or ".mp4"
     input_file = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
-    output_file = OUTPUT_DIR / f"converted_{uuid.uuid4().hex}.mp4"
+    output_file = OUTPUT_DIR / f"processed_{uuid.uuid4().hex}.mp4"
 
     with input_file.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
