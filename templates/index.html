@@ -1,110 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>FreeCut Studio</title>
-  <link rel="stylesheet" href="/static/styles.css"/>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FreeCut Studio</title>
+<link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">FC</div>
-      <div>
-        <h1>FreeCut Studio</h1>
-        <p>Free AI video background remover + simple editor</p>
-      </div>
-    </div>
-    <a class="github" href="#deploy">Deploy Guide</a>
-  </header>
-
-  <main class="layout">
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="pill">Railway Ready • Free Open Source MVP</span>
-        <h2>Edit videos and remove backgrounds online.</h2>
-        <p>Upload a video, remove person background, blur background, trim, resize, mute audio, and add caption text.</p>
-      </div>
-
-      <div class="preview-card">
-        <video id="preview" controls muted></video>
-        <div class="dropzone" id="dropzone">
-          <input id="fileInput" type="file" accept="video/*"/>
-          <strong>Drag & drop video here</strong>
-          <span>or click to select MP4/MOV/WebM</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="grid">
-      <form class="panel" id="bgForm">
-        <h3>Background Remover</h3>
-        <p class="hint">Works best for person-focused videos.</p>
-
-        <label>Output background</label>
-        <select name="mode">
-          <option value="transparent_green">Green screen background</option>
-          <option value="solid">Solid color background</option>
-          <option value="blur">Blur original background</option>
-        </select>
-
-        <label>Solid background color</label>
-        <input name="bg_color" type="color" value="#00ff00"/>
-
-        <label>Segmentation threshold</label>
-        <input name="threshold" type="range" min="0.1" max="0.9" step="0.05" value="0.35"/>
-
-        <label>Blur strength</label>
-        <input name="blur_strength" type="range" min="3" max="99" step="2" value="31"/>
-
-        <label>Max seconds to process</label>
-        <input name="max_seconds" type="number" min="1" max="120" value="20"/>
-
-        <button type="submit">Remove Background</button>
-      </form>
-
-      <form class="panel" id="editForm">
-        <h3>Video Editor</h3>
-        <p class="hint">Quick FFmpeg-based edits.</p>
-
-        <label>Start time</label>
-        <input name="start_time" placeholder="00:00:02"/>
-
-        <label>End time</label>
-        <input name="end_time" placeholder="00:00:15"/>
-
-        <label>Resize width</label>
-        <input name="width" placeholder="720"/>
-
-        <label>Caption text</label>
-        <input name="text" placeholder="My vlog title"/>
-
-        <label class="check">
-          <input name="mute" type="checkbox"/>
-          Mute audio
-        </label>
-
-        <button type="submit">Edit Video</button>
-      </form>
-    </section>
-
-    <section class="result">
-      <h3>Result</h3>
-      <p id="status">Upload a video to start.</p>
-      <video id="resultVideo" controls></video>
-      <a id="downloadLink" class="download" download>Download Output</a>
-    </section>
-
-    <section id="deploy" class="deploy">
-      <h3>Railway Deployment Notes</h3>
-      <ol>
-        <li>Upload all files to GitHub root, not inside another nested folder.</li>
-        <li>Railway will use <b>Dockerfile</b>.</li>
-        <li>Start command is handled by <b>start.sh</b> using <code>python -m uvicorn</code>.</li>
-      </ol>
-    </section>
-  </main>
-
-<script src="/static/app.js"></script>
+<div class="wrap">
+<h1>FreeCut Studio</h1>
+<p>Railway deployment fixed successfully.</p>
+<p>Health endpoint active: <code>/health</code></p>
+<p>Ready endpoint active: <code>/ready</code></p>
+</div>
 </body>
 </html>
