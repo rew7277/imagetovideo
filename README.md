@@ -1,28 +1,38 @@
-# FreeCut Studio
+# FreeCut Studio V2 Fixed
 
-Free Canva-style MVP for video background removal and simple editing.
+Railway-ready free video background remover and basic video editor.
 
-## Features
+## Why V2 Fixed?
 
-- Upload video from browser
-- Remove person background using free MediaPipe Selfie Segmentation
-- Output modes:
-  - Green screen background
-  - Solid color background
-  - Blurred background
-- Basic video editing using FFmpeg:
-  - Trim start/end time
-  - Mute audio
-  - Resize width
-  - Add caption text
-- FastAPI backend
-- Railway deployable through Dockerfile
+This version fixes Railway deployment failure:
+
+```text
+/opt/venv/bin/uvicorn could not be found
+```
+
+Fixes added:
+
+- Uses `python -m uvicorn` instead of direct `/opt/venv/bin/uvicorn`
+- Added `start.sh`
+- Added `Procfile`
+- Added `railway.json`
+- Added `nixpacks.toml`
+- Dockerfile explicitly installs Python dependencies and FFmpeg
+
+## Deploy to Railway
+
+1. Extract this zip.
+2. Upload all files to GitHub repository root.
+   - Important: `app.py`, `Dockerfile`, `requirements.txt`, `railway.json` must be in root.
+3. Railway → New Project → Deploy from GitHub.
+4. Do not manually override start command.
+5. Open `/health` after deployment.
 
 ## Local Run
 
 ```bash
 pip install -r requirements.txt
-uvicorn app:app --reload --port 8080
+python -m uvicorn app:app --reload --port 8080
 ```
 
 Open:
@@ -31,33 +41,8 @@ Open:
 http://localhost:8080
 ```
 
-## Railway Deployment
+## Notes
 
-1. Create GitHub repository.
-2. Upload these files.
-3. Go to Railway.
-4. New Project → Deploy from GitHub.
-5. Select repository.
-6. Railway will detect Dockerfile and deploy.
-7. Open generated Railway URL.
-
-## Important Limits
-
-This is an MVP, not a full Canva clone.
-
-MediaPipe Selfie Segmentation works best for humans/person videos.
-For product videos, pets, vehicles, or complex backgrounds, use a stronger model later.
-
-Railway free/basic machines can be slow for long videos. Keep first test videos under 30 seconds.
-
-## Suggested Next Features
-
-- User login and project saving
-- Timeline editor
-- Templates
-- Video crop presets: YouTube Shorts, Instagram Reels, landscape
-- AI captions/subtitles
-- Audio library
-- Cloud storage using S3
-- Queue processing using Redis/RQ or Celery
-- Better background removal model using MODNet or Robust Video Matting
+- Background removal uses MediaPipe Selfie Segmentation.
+- Best for human/person videos.
+- Use short videos first on Railway because video processing is CPU-heavy.

@@ -50,7 +50,7 @@ async function postForm(url, form) {
 
   resultVideo.style.display = "none";
   downloadLink.style.display = "none";
-  setStatus("Processing video... Larger videos may take time on Railway free tier.");
+  setStatus("Processing video... Use small clips first on Railway.");
 
   const response = await fetch(url, { method: "POST", body: data });
 

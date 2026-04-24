@@ -43,7 +43,7 @@ def cleanup_file(path: Path):
 def run_ffmpeg(cmd: list[str]):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr[-3000:])
+        raise RuntimeError(result.stderr[-2500:])
     return result
 
 
@@ -79,13 +79,8 @@ def remove_video_background(
     threshold: float = 0.35,
     max_seconds: Optional[int] = 30,
 ):
-    """
-    Free person-background removal using MediaPipe Selfie Segmentation.
-    Output is mp4. True transparent alpha video is not broadly supported by browsers,
-    so this app supports green-screen, solid color, blur, and original-background modes.
-    """
     if mp is None:
-        raise RuntimeError("MediaPipe is not installed. Check requirements/Docker build logs.")
+        raise RuntimeError("MediaPipe import failed. Please redeploy using the included Dockerfile.")
 
     info = get_video_info(input_path)
     fps = info["fps"] or 25
@@ -97,9 +92,7 @@ def remove_video_background(
     temp_no_audio = OUTPUT_DIR / f"{uuid.uuid4().hex}_noaudio.mp4"
     writer = cv2.VideoWriter(str(temp_no_audio), fourcc, fps, (width, height))
 
-    max_frames = None
-    if max_seconds and max_seconds > 0:
-        max_frames = int(max_seconds * fps)
+    max_frames = int(max_seconds * fps) if max_seconds and max_seconds > 0 else None
 
     bg_bgr = np.array(hex_to_bgr(bg_color), dtype=np.uint8)
     if blur_strength % 2 == 0:
@@ -128,11 +121,9 @@ def remove_video_background(
         elif mode == "solid":
             background = np.zeros(frame.shape, dtype=np.uint8)
             background[:] = bg_bgr
-        elif mode == "transparent_green":
+        else:
             background = np.zeros(frame.shape, dtype=np.uint8)
             background[:] = (0, 255, 0)
-        else:
-            background = frame
 
         output = np.where(condition_3, frame, background)
         writer.write(output.astype(np.uint8))
@@ -142,7 +133,6 @@ def remove_video_background(
     writer.release()
     segmenter.close()
 
-    # Preserve audio when available.
     try:
         run_ffmpeg([
             "ffmpeg", "-y",
@@ -150,6 +140,7 @@ def remove_video_background(
             "-i", str(input_path),
             "-map", "0:v:0", "-map", "1:a:0?",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest",
             str(output_path)
         ])
@@ -196,7 +187,7 @@ def basic_edit_video(
     if filters:
         cmd += ["-vf", ",".join(filters)]
 
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]
 
     if mute:
         cmd += ["-an"]
@@ -213,17 +204,9 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.post("/api/video-info")
-async def video_info(file: UploadFile = File(...)):
-    ext = Path(file.filename).suffix.lower() or ".mp4"
-    src = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
-    with src.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    try:
-        info = get_video_info(src)
-        return info
-    finally:
-        cleanup_file(src)
+@app.get("/health")
+async def health():
+    return {"status": "ok", "app": APP_NAME}
 
 
 @app.post("/remove-background")
@@ -234,7 +217,7 @@ async def remove_background(
     bg_color: str = Form("#00ff00"),
     blur_strength: int = Form(31),
     threshold: float = Form(0.35),
-    max_seconds: int = Form(30),
+    max_seconds: int = Form(20),
 ):
     ext = Path(file.filename).suffix.lower() or ".mp4"
     src = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
@@ -272,13 +255,12 @@ async def edit_video(
 
     try:
         basic_edit_video(
-            src,
-            out,
+            src, out,
             start_time=start_time.strip(),
             end_time=end_time.strip(),
             mute=mute.lower() == "true",
             width=width.strip(),
-            text=text.strip(),
+            text=text.strip()
         )
     except Exception as e:
         cleanup_file(src)
@@ -286,8 +268,3 @@ async def edit_video(
 
     background_tasks.add_task(cleanup_file, src)
     return FileResponse(out, media_type="video/mp4", filename="edited_video.mp4")
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "app": APP_NAME}

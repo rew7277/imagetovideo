@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+echo "Starting FreeCut Studio..."
+echo "PORT=${PORT:-8080}"
+
+python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}
