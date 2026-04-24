@@ -6,7 +6,7 @@ Entry point for the backend server.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import os
 
 from backend.core.database import engine, Base
@@ -22,9 +22,6 @@ app = FastAPI(
 )
 
 # --- CORS Middleware ---
-# Allow frontend origin to communicate with backend
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Tighten in production
@@ -33,12 +30,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Health checks FIRST (before any catch-all) ---
+# Railway's default healthcheck hits /health — must be registered early.
+@app.get("/health", include_in_schema=False)
+@app.get("/api/health", include_in_schema=False)
+async def health_check():
+    """Health check endpoint for Railway and uptime monitoring."""
+    return JSONResponse({"status": "ok", "version": "1.0.0"})
+
 # --- API Routers ---
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(canvas.router, prefix="/api/canvas", tags=["Canvas"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 
 # --- Serve Frontend Static Files ---
+# __file__ is backend/main.py → go up one level to reach frontend/
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 static_path = os.path.join(frontend_path, "static")
 
@@ -53,14 +59,9 @@ async def serve_index():
     return FileResponse(index_path)
 
 
+# Catch-all MUST be last — it would swallow /health if registered first.
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_spa(full_path: str):
-    """Catch-all to serve frontend for SPA routing."""
+    """Catch-all: return index.html for any unknown path (SPA client routing)."""
     index_path = os.path.join(frontend_path, "templates", "index.html")
     return FileResponse(index_path)
-
-
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint for Railway and monitoring."""
-    return {"status": "ok", "version": "1.0.0"}
