@@ -38,11 +38,10 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
 'done' \
 'exec python -m uvicorn $FIXED_ARGS' \
 > /opt/venv/bin/uvicorn && \
-    chmod +x /opt/venv/bin/uvicorn && \
-    /opt/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8082 --help > /dev/null || true
+    chmod +x /opt/venv/bin/uvicorn
 
 COPY . .
 
 EXPOSE 8082
 
-CMD ["sh", "-c", "python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8082}"]
+CMD ["sh", "-c", "python -m uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8082}"]

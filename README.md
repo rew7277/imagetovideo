@@ -1,39 +1,56 @@
-# FreeCut Studio V6 Port Final Fix
+# FreeCut Studio V7 Actual Railway Fix
 
-This version fixes the Railway error:
+This version fixes the issue shown in your latest Railway logs:
 
 ```text
-Invalid value for '--port': '${PORT:-8000}' is not a valid integer.
+ModuleNotFoundError: No module named 'sqlalchemy'
+/app/backend/main.py
 ```
 
-## What changed
+## What was wrong
 
-Railway is passing `${PORT:-8000}` as a literal string without shell expansion.
-This Dockerfile creates a smart `/opt/venv/bin/uvicorn` wrapper that replaces the broken literal port with the real `$PORT`, or defaults to `8082`.
+Railway was not starting `app.py`. It was starting:
 
-## Railway Networking
+```text
+backend/main.py
+```
 
-Your Railway public networking target port is:
+So this package includes both:
+
+```text
+app.py
+backend/main.py
+```
+
+Both expose the FastAPI `app`.
+
+## Fixes included
+
+- `/opt/venv/bin/uvicorn` compatibility wrapper
+- literal `${PORT:-8000}` handling
+- Railway port `8082`
+- `/health`
+- `/ready`
+- `backend.main:app`
+- SQLAlchemy dependency added
+- SQLite fallback database module
+
+## Railway settings
+
+Public Networking target port:
 
 ```text
 8082
 ```
 
-This project defaults to `8082` and exposes `8082`.
+Healthcheck path:
 
-## Deploy Steps
+```text
+/health
+```
 
-1. Extract this zip.
-2. Push files directly to GitHub root.
-3. Railway → redeploy.
-4. Keep public networking target port as `8082`.
-5. Healthcheck path: `/health`.
-
-## If still failing
-
-In Railway → Service → Settings → Start Command, remove any custom command.
-If you must keep one, use:
+If Railway has an old custom start command, change it to:
 
 ```bash
-sh -c 'python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8082}'
+sh -c 'python -m uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8082}'
 ```

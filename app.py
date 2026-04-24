@@ -10,7 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 APP_NAME = "FreeCut Studio"
-BASE_DIR = Path(__file__).parent
+
+BASE_DIR = Path(__file__).resolve().parent
+if BASE_DIR.name == "backend":
+    BASE_DIR = BASE_DIR.parent
+
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
 STATIC_DIR = BASE_DIR / "static"
@@ -20,6 +24,7 @@ for folder in [UPLOAD_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATE_DIR]:
     folder.mkdir(exist_ok=True)
 
 app = FastAPI(title=APP_NAME)
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
@@ -29,7 +34,8 @@ async def health():
     return {
         "status": "ok",
         "service": APP_NAME,
-        "port": os.getenv("PORT", "8082")
+        "port": os.getenv("PORT", "8082"),
+        "entrypoint": "compatible-app"
     }
 
 
