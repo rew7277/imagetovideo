@@ -2,7 +2,13 @@
 nixPkgs = ["python311", "gcc"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+# Explicitly create venv and install via the venv's pip
+# "pip" alone fails (exit 127) because bare pip isn't on PATH before venv activation
+cmds = [
+  "python3 -m venv --copies /opt/venv",
+  "/opt/venv/bin/pip install --upgrade pip",
+  "/opt/venv/bin/pip install -r requirements.txt"
+]
 
 [start]
-cmd = "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = "/opt/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"
