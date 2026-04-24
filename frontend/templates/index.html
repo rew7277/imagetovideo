@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canvara — Draw Together</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen" class="screen active">
+    <div class="auth-bg">
+      <canvas id="auth-canvas-bg"></canvas>
+    </div>
+    <div class="auth-container">
+      <div class="auth-brand">
+        <div class="brand-icon">◈</div>
+        <h1>Canvara</h1>
+        <p>Draw. Collaborate. Create.</p>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button class="tab-btn active" data-tab="login">Login</button>
+          <button class="tab-btn" data-tab="register">Register</button>
+        </div>
+
+        <!-- Login Form -->
+        <div id="tab-login" class="tab-panel active">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="login-username" placeholder="your_username" autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" />
+          </div>
+          <button class="btn-primary" id="btn-login">Enter Studio</button>
+          <p id="login-error" class="form-error"></p>
+        </div>
+
+        <!-- Register Form -->
+        <div id="tab-register" class="tab-panel">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="reg-username" placeholder="cool_artist" />
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="reg-email" placeholder="you@example.com" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="reg-password" placeholder="min. 6 characters" />
+          </div>
+          <button class="btn-primary" id="btn-register">Create Account</button>
+          <p id="register-error" class="form-error"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD SCREEN -->
+  <div id="dashboard-screen" class="screen">
+    <nav class="topbar">
+      <div class="topbar-brand">
+        <span class="brand-icon">◈</span>
+        <span>Canvara</span>
+      </div>
+      <div class="topbar-right">
+        <span id="dash-username" class="user-chip"></span>
+        <button class="btn-ghost" id="btn-logout">Logout</button>
+      </div>
+    </nav>
+
+    <main class="dashboard-main">
+      <div class="dash-header">
+        <h2>Your Canvases</h2>
+        <button class="btn-primary" id="btn-new-canvas">+ New Canvas</button>
+      </div>
+      <div id="canvas-grid" class="canvas-grid">
+        <!-- Canvas cards injected here -->
+        <div class="canvas-grid-empty" id="empty-state">
+          <div class="empty-icon">✦</div>
+          <p>No canvases yet. Create your first one!</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- STUDIO (DRAWING) SCREEN -->
+  <div id="studio-screen" class="screen">
+    <!-- Studio Topbar -->
+    <div class="studio-topbar">
+      <button class="btn-back" id="btn-back-dash">← Dashboard</button>
+      <input type="text" id="canvas-title-input" class="canvas-title-input" value="Untitled Canvas" />
+      <div class="studio-actions">
+        <button class="btn-ghost" id="btn-share">Share</button>
+        <button class="btn-primary" id="btn-save">Save</button>
+      </div>
+    </div>
+
+    <!-- Drawing Layout -->
+    <div class="studio-layout">
+
+      <!-- LEFT TOOLBAR -->
+      <div class="toolbar">
+        <div class="tool-group">
+          <button class="tool-btn active" id="tool-pen" data-tool="pen" title="Pen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="tool-btn" id="tool-eraser" data-tool="eraser" title="Eraser">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><path d="M6 11l6 6"/></svg>
+          </button>
+          <button class="tool-btn" id="tool-line" data-tool="line" title="Line">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/></svg>
+          </button>
+          <button class="tool-btn" id="tool-rect" data-tool="rect" title="Rectangle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          </button>
+          <button class="tool-btn" id="tool-circle" data-tool="circle" title="Circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Color Picker -->
+        <div class="tool-group">
+          <label class="color-swatch-label" title="Pick Color">
+            <input type="color" id="color-picker" value="#e8ff6b" />
+            <div class="color-preview" id="color-preview"></div>
+          </label>
+
+          <!-- Preset colors -->
+          <div class="color-presets">
+            <button class="preset-color" style="background:#e8ff6b" data-color="#e8ff6b"></button>
+            <button class="preset-color" style="background:#ff6b6b" data-color="#ff6b6b"></button>
+            <button class="preset-color" style="background:#6bffd8" data-color="#6bffd8"></button>
+            <button class="preset-color" style="background:#6b8fff" data-color="#6b8fff"></button>
+            <button class="preset-color" style="background:#ff6bdc" data-color="#ff6bdc"></button>
+            <button class="preset-color" style="background:#ffffff" data-color="#ffffff"></button>
+            <button class="preset-color dark" style="background:#111111" data-color="#111111"></button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Brush Size -->
+        <div class="tool-group">
+          <label class="size-label">Size</label>
+          <input type="range" id="brush-size" min="1" max="60" value="5" class="size-slider" />
+          <span id="brush-size-val" class="size-val">5</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Actions -->
+        <div class="tool-group">
+          <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          </button>
+          <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+          </button>
+          <button class="tool-btn danger" id="btn-clear" title="Clear Canvas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+          <!-- Background Remover -->
+          <button class="tool-btn" id="btn-bg-remove" title="Remove Background (AI)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.5 10.5C9.1 11.1 8 12.4 8 14a4 4 0 0 0 8 0 4 4 0 0 0-1.5-3.1M12 8a4 4 0 0 1 4 4"/><path d="M3 12a9 9 0 0 1 9-9"/></svg>
+          </button>
+          <!-- Export -->
+          <button class="tool-btn" id="btn-export" title="Export as PNG">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Collaboration indicator -->
+        <div class="collab-indicator" id="collab-status">
+          <div class="collab-dot"></div>
+          <span>Live</span>
+        </div>
+      </div>
+
+      <!-- CANVAS AREA -->
+      <div class="canvas-wrapper" id="canvas-wrapper">
+        <canvas id="drawing-canvas"></canvas>
+        <!-- Overlay canvas for shape preview while dragging -->
+        <canvas id="preview-canvas"></canvas>
+        <div class="canvas-loader" id="canvas-loader">
+          <div class="loader-ring"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: New Canvas -->
+  <div id="modal-new-canvas" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>New Canvas</h3>
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="new-canvas-title" placeholder="My awesome drawing" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="btn-modal-cancel">Cancel</button>
+        <button class="btn-primary" id="btn-modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST Notifications -->
+  <div id="toast-container"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/canvas.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

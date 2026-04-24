@@ -1,6 +1,27 @@
-flask
-flask-cors
-pillow
-numpy
-gunicorn
-httpx
+# Canvara — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# Database ORM
+sqlalchemy==2.0.30
+alembic==1.13.1
+
+# PostgreSQL driver (used in production on Railway)
+psycopg2-binary==2.9.9
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Data validation
+pydantic[email]==2.7.1
+python-multipart==0.0.9
+
+# Environment variables
+python-dotenv==1.0.1
+
+# WebSockets (included in uvicorn[standard])
+websockets==12.0
