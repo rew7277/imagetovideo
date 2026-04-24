@@ -1,252 +1,293 @@
-import os, io, uuid, time, base64, numpy as np
-import httpx                          # replaces requests for HF calls
-from flask import Flask, request, jsonify, send_file, Response
-from flask_cors import CORS
-from PIL import Image, ImageFilter
+import os
+import uuid
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional
 
-app = Flask(__name__)
-CORS(app)
+import cv2
+import numpy as np
+from fastapi import FastAPI, File, UploadFile, Form, Request, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-OUTPUT_FOLDER = 'outputs'
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+try:
+    import mediapipe as mp
+except Exception:
+    mp = None
 
-HF_API_KEY  = os.environ.get('HF_API_KEY', '')
-HF_HEADERS  = {"Authorization": f"Bearer {HF_API_KEY}"}
-MAX_FILE_SIZE       = 10 * 1024 * 1024
-ALLOWED_EXTENSIONS  = {'png', 'jpg', 'jpeg', 'webp'}
+APP_NAME = "FreeCut Studio"
+ROOT = Path(__file__).parent
+UPLOAD_DIR = ROOT / "uploads"
+OUTPUT_DIR = ROOT / "outputs"
+STATIC_DIR = ROOT / "static"
+TEMPLATE_DIR = ROOT / "templates"
 
+for d in [UPLOAD_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATE_DIR]:
+    d.mkdir(exist_ok=True)
 
-# ── Why httpx instead of requests? ────────────────────────────────────────────
-# requests → urllib3 → http.client._safe_read() enforces Content-Length
-# strictly and raises IncompleteRead when Railway's proxy drops the TCP
-# connection mid-transfer.  httpx uses httpcore, a completely separate
-# transport layer that reads chunked responses without that check.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def safe_hf_post(url: str, data: bytes, timeout: int = 90, retries: int = 3) -> httpx.Response | None:
-    """POST to HuggingFace Inference API via httpx (immune to IncompleteRead)."""
-    for attempt in range(retries):
-        try:
-            with httpx.Client(timeout=httpx.Timeout(timeout, connect=15)) as client:
-                resp = client.post(url, headers=HF_HEADERS, content=data)
-
-            if resp.status_code == 503:
-                wait = 20 + 5 * attempt
-                app.logger.warning(f"HF 503 – model loading, waiting {wait}s (attempt {attempt+1})")
-                time.sleep(wait)
-                continue
-
-            return resp
-
-        except httpx.ReadError as e:
-            app.logger.warning(f"HF httpx ReadError attempt {attempt+1}: {e}")
-        except httpx.TimeoutException as e:
-            app.logger.warning(f"HF httpx Timeout attempt {attempt+1}: {e}")
-        except Exception as e:
-            app.logger.warning(f"HF httpx error attempt {attempt+1}: {e}")
-
-        if attempt < retries - 1:
-            time.sleep(5 * (attempt + 1))
-
-    raise RuntimeError(f"HF API unreachable after {retries} attempts")
+app = FastAPI(title=APP_NAME)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def image_to_base64(img, fmt='PNG'):
-    buf = io.BytesIO()
-    img.save(buf, format=fmt)
-    return base64.b64encode(buf.getvalue()).decode()
-
-HTML_PAGE = open(os.path.join(os.path.dirname(__file__), 'index.html')).read()
-
-@app.route('/')
-def index():
-    return Response(HTML_PAGE, mimetype='text/html')
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok', 'hf_key_set': bool(HF_API_KEY)})
-
-@app.route('/api/depth', methods=['POST'])
-def depth_estimation():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    file = request.files['file']
-    if not file or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
-    file.seek(0, 2)
-    if file.tell() > MAX_FILE_SIZE:
-        return jsonify({'error': 'File too large (max 10MB)'}), 400
-    file.seek(0)
+def cleanup_file(path: Path):
     try:
-        img = Image.open(file).convert('RGB')
-        img.thumbnail((512, 512), Image.LANCZOS)
-        img_bytes = io.BytesIO()
-        img.save(img_bytes, format='JPEG', quality=90)
-        img_bytes.seek(0)
+        if path.exists():
+            path.unlink()
+    except Exception:
+        pass
 
-        if not HF_API_KEY:
-            depth_img = generate_demo_depth(img)
+
+def run_ffmpeg(cmd: list[str]):
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr[-3000:])
+    return result
+
+
+def get_video_info(path: Path):
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        raise ValueError("Unable to open uploaded video.")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration = round(frames / fps, 2) if fps else 0
+    cap.release()
+    return {"fps": fps, "width": width, "height": height, "frames": frames, "duration": duration}
+
+
+def hex_to_bgr(hex_color: str):
+    hex_color = (hex_color or "#00ff00").replace("#", "")
+    if len(hex_color) != 6:
+        hex_color = "00ff00"
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return (b, g, r)
+
+
+def remove_video_background(
+    input_path: Path,
+    output_path: Path,
+    mode: str = "transparent_green",
+    bg_color: str = "#00ff00",
+    blur_strength: int = 21,
+    threshold: float = 0.35,
+    max_seconds: Optional[int] = 30,
+):
+    """
+    Free person-background removal using MediaPipe Selfie Segmentation.
+    Output is mp4. True transparent alpha video is not broadly supported by browsers,
+    so this app supports green-screen, solid color, blur, and original-background modes.
+    """
+    if mp is None:
+        raise RuntimeError("MediaPipe is not installed. Check requirements/Docker build logs.")
+
+    info = get_video_info(input_path)
+    fps = info["fps"] or 25
+    width = info["width"]
+    height = info["height"]
+
+    cap = cv2.VideoCapture(str(input_path))
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    temp_no_audio = OUTPUT_DIR / f"{uuid.uuid4().hex}_noaudio.mp4"
+    writer = cv2.VideoWriter(str(temp_no_audio), fourcc, fps, (width, height))
+
+    max_frames = None
+    if max_seconds and max_seconds > 0:
+        max_frames = int(max_seconds * fps)
+
+    bg_bgr = np.array(hex_to_bgr(bg_color), dtype=np.uint8)
+    if blur_strength % 2 == 0:
+        blur_strength += 1
+    blur_strength = max(3, min(99, blur_strength))
+
+    segmenter = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
+
+    frame_count = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if max_frames and frame_count >= max_frames:
+            break
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = segmenter.process(rgb)
+        mask = result.segmentation_mask
+
+        condition = mask > threshold
+        condition_3 = np.stack((condition,) * 3, axis=-1)
+
+        if mode == "blur":
+            background = cv2.GaussianBlur(frame, (blur_strength, blur_strength), 0)
+        elif mode == "solid":
+            background = np.zeros(frame.shape, dtype=np.uint8)
+            background[:] = bg_bgr
+        elif mode == "transparent_green":
+            background = np.zeros(frame.shape, dtype=np.uint8)
+            background[:] = (0, 255, 0)
         else:
-            api_url = "https://api-inference.huggingface.co/models/Intel/dpt-large"
-            resp = safe_hf_post(api_url, img_bytes.read(), timeout=90)
-            if resp is None or resp.status_code != 200:
-                status = resp.status_code if resp else 'N/A'
-                body   = resp.text[:300] if resp else ''
-                return jsonify({'error': f'HF API error {status}: {body}'}), 500
-            depth_img = Image.open(io.BytesIO(resp.content)).convert('L')
+            background = frame
 
-        uid = str(uuid.uuid4())[:8]
-        depth_img.save(os.path.join(OUTPUT_FOLDER, f'{uid}_depth.png'))
-        anaglyph = generate_anaglyph(img, depth_img)
-        anaglyph.save(os.path.join(OUTPUT_FOLDER, f'{uid}_3d.png'))
-        return jsonify({
-            'success': True, 'uid': uid,
-            'original':    image_to_base64(img, 'JPEG'),
-            'depth_map':   image_to_base64(depth_img.convert('RGB'), 'PNG'),
-            'anaglyph_3d': image_to_base64(anaglyph, 'PNG'),
-            'download_depth': f'/api/download/{uid}_depth.png',
-            'download_3d':    f'/api/download/{uid}_3d.png',
-        })
-    except Exception as e:
-        app.logger.exception("depth_estimation error")
-        return jsonify({'error': str(e)}), 500
+        output = np.where(condition_3, frame, background)
+        writer.write(output.astype(np.uint8))
+        frame_count += 1
 
+    cap.release()
+    writer.release()
+    segmenter.close()
 
-def generate_demo_depth(img):
-    gray  = np.array(img.convert('L'), dtype=np.float32)
-    depth = 255 - gray
-    h, w  = depth.shape
-    cy, cx = h // 2, w // 2
-    Y, X  = np.ogrid[:h, :w]
-    dist  = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2)
-    dist  = dist / dist.max()
-    depth = depth * 0.6 + (1 - dist) * 255 * 0.4
-    return (
-        Image.fromarray(np.clip(depth, 0, 255).astype(np.uint8), 'L')
-             .filter(ImageFilter.GaussianBlur(radius=3))
-    )
-
-
-def generate_anaglyph(img, depth):
-    img_rgb   = np.array(img.convert('RGB'), dtype=np.float32)
-    depth_arr = np.array(depth.convert('L'), dtype=np.float32) / 255.0
-    h, w      = img_rgb.shape[:2]
-    right     = img_rgb.copy()
-    for row in range(h):
-        shifts = (depth_arr[row] * 12).astype(int)
-        for col in range(w):
-            right[row, col] = img_rgb[row, min(col + shifts[col], w - 1)]
-    anaglyph = np.zeros_like(img_rgb)
-    anaglyph[:, :, 0] = img_rgb[:, :, 0]
-    anaglyph[:, :, 1] = right[:, :, 1]
-    anaglyph[:, :, 2] = right[:, :, 2]
-    return Image.fromarray(np.clip(anaglyph, 0, 255).astype(np.uint8), 'RGB')
-
-
-@app.route('/api/img2video', methods=['POST'])
-def image_to_video():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    file = request.files['file']
-    if not file or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
-    file.seek(0, 2)
-    if file.tell() > MAX_FILE_SIZE:
-        return jsonify({'error': 'File too large (max 10MB)'}), 400
-    file.seek(0)
-    motion_type = request.form.get('motion', 'parallax')
+    # Preserve audio when available.
     try:
-        img = Image.open(file).convert('RGB')
-        img.thumbnail((512, 512), Image.LANCZOS)
-        uid = str(uuid.uuid4())[:8]
-        if HF_API_KEY and motion_type == 'svd':
-            video_path = generate_svd_video(img, uid)
-        else:
-            video_path = generate_parallax_video(img, uid, motion_type)
-        if not video_path or not os.path.exists(video_path):
-            return jsonify({'error': 'Video generation failed'}), 500
-        fname = os.path.basename(video_path)
-        fmt   = os.path.splitext(fname)[1].lstrip('.')  # 'gif' or 'mp4'
-        return jsonify({
-            'success': True, 'uid': uid,
-            'video_url':    f'/api/stream/{fname}',
-            'download_url': f'/api/download/{fname}',
-            'format': fmt,
-        })
+        run_ffmpeg([
+            "ffmpeg", "-y",
+            "-i", str(temp_no_audio),
+            "-i", str(input_path),
+            "-map", "0:v:0", "-map", "1:a:0?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "aac", "-shortest",
+            str(output_path)
+        ])
+        cleanup_file(temp_no_audio)
+    except Exception:
+        shutil.move(str(temp_no_audio), str(output_path))
+
+    return output_path
+
+
+def basic_edit_video(
+    input_path: Path,
+    output_path: Path,
+    start_time: str = "",
+    end_time: str = "",
+    mute: bool = False,
+    width: str = "",
+    text: str = "",
+):
+    cmd = ["ffmpeg", "-y"]
+
+    if start_time:
+        cmd += ["-ss", start_time]
+    if end_time:
+        cmd += ["-to", end_time]
+
+    cmd += ["-i", str(input_path)]
+
+    filters = []
+    if width and width.isdigit():
+        filters.append(f"scale={int(width)}:-2")
+
+    if text:
+        safe_text = text.replace("'", "\\'").replace(":", "\\:")
+        filters.append(
+            "drawtext="
+            "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            f"text='{safe_text}':"
+            "x=(w-text_w)/2:y=h-(text_h*3):"
+            "fontsize=36:fontcolor=white:"
+            "box=1:boxcolor=black@0.45:boxborderw=12"
+        )
+
+    if filters:
+        cmd += ["-vf", ",".join(filters)]
+
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+
+    if mute:
+        cmd += ["-an"]
+    else:
+        cmd += ["-c:a", "aac"]
+
+    cmd += [str(output_path)]
+    run_ffmpeg(cmd)
+    return output_path
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/api/video-info")
+async def video_info(file: UploadFile = File(...)):
+    ext = Path(file.filename).suffix.lower() or ".mp4"
+    src = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    with src.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        info = get_video_info(src)
+        return info
+    finally:
+        cleanup_file(src)
+
+
+@app.post("/remove-background")
+async def remove_background(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    mode: str = Form("transparent_green"),
+    bg_color: str = Form("#00ff00"),
+    blur_strength: int = Form(31),
+    threshold: float = Form(0.35),
+    max_seconds: int = Form(30),
+):
+    ext = Path(file.filename).suffix.lower() or ".mp4"
+    src = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    out = OUTPUT_DIR / f"bg_removed_{uuid.uuid4().hex}.mp4"
+
+    with src.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    try:
+        remove_video_background(src, out, mode, bg_color, blur_strength, threshold, max_seconds)
     except Exception as e:
-        app.logger.exception("image_to_video error")
-        return jsonify({'error': str(e)}), 500
+        cleanup_file(src)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    background_tasks.add_task(cleanup_file, src)
+    return FileResponse(out, media_type="video/mp4", filename="background_removed.mp4")
 
 
-def generate_parallax_video(img, uid, motion_type='parallax'):
-    w, h         = img.size
-    fps          = 10
-    total_frames = fps * 3
-    img_np       = np.array(img)
-    frames       = []
-    for i in range(total_frames):
-        t = i / total_frames
-        if motion_type == 'zoom':
-            scale  = 1.0 + 0.12 * np.sin(t * np.pi)
-            nw, nh = int(w * scale), int(h * scale)
-            frame  = img.resize((nw, nh), Image.LANCZOS).crop(
-                ((nw-w)//2, (nh-h)//2, (nw-w)//2+w, (nh-h)//2+h)
-            )
-        elif motion_type == 'ken_burns':
-            scale  = 1.0 + 0.18 * t
-            nw, nh = int(w * scale), int(h * scale)
-            frame  = img.resize((nw, nh), Image.LANCZOS)
-            left   = int((nw - w) * t * 0.5)
-            top    = int((nh - h) * t * 0.3)
-            frame  = frame.crop((left, top, left+w, top+h))
-        else:
-            shift = int(18 * np.sin(2 * np.pi * t))
-            frame = Image.fromarray(np.roll(img_np, shift, axis=1))
-        frames.append(frame.convert('P', palette=Image.ADAPTIVE, colors=256))
+@app.post("/edit-video")
+async def edit_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    start_time: str = Form(""),
+    end_time: str = Form(""),
+    mute: str = Form("false"),
+    width: str = Form(""),
+    text: str = Form(""),
+):
+    ext = Path(file.filename).suffix.lower() or ".mp4"
+    src = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    out = OUTPUT_DIR / f"edited_{uuid.uuid4().hex}.mp4"
 
-    gif_path = os.path.join(OUTPUT_FOLDER, f'{uid}_video.gif')
-    frames[0].save(gif_path, save_all=True, append_images=frames[1:],
-                   loop=0, duration=int(1000/fps))
-    return gif_path   # serve .gif directly — no mp4 copy needed
+    with src.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
 
+    try:
+        basic_edit_video(
+            src,
+            out,
+            start_time=start_time.strip(),
+            end_time=end_time.strip(),
+            mute=mute.lower() == "true",
+            width=width.strip(),
+            text=text.strip(),
+        )
+    except Exception as e:
+        cleanup_file(src)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-def generate_svd_video(img, uid):
-    buf = io.BytesIO()
-    img.save(buf, format='JPEG', quality=90)
-    resp = safe_hf_post(
-        "https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt",
-        buf.getvalue(), timeout=300
-    )
-    if resp and resp.status_code == 200:
-        p = os.path.join(OUTPUT_FOLDER, f'{uid}_video.mp4')
-        with open(p, 'wb') as f:
-            f.write(resp.content)
-        return p
-    return generate_parallax_video(img, uid, 'ken_burns')
+    background_tasks.add_task(cleanup_file, src)
+    return FileResponse(out, media_type="video/mp4", filename="edited_video.mp4")
 
 
-@app.route('/api/stream/<filename>')
-def stream_file(filename):
-    safe = os.path.basename(filename)
-    fp   = os.path.join(OUTPUT_FOLDER, safe)
-    if not os.path.exists(fp):
-        return jsonify({'error': 'File not found'}), 404
-    mime = 'image/gif' if safe.endswith('.gif') else 'video/mp4'
-    return send_file(fp, mimetype=mime, conditional=True)
-
-
-@app.route('/api/download/<filename>')
-def download_file(filename):
-    safe = os.path.basename(filename)
-    fp   = os.path.join(OUTPUT_FOLDER, safe)
-    if not os.path.exists(fp):
-        return jsonify({'error': 'File not found'}), 404
-    return send_file(fp, as_attachment=True)
-
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+@app.get("/health")
+async def health():
+    return {"status": "ok", "app": APP_NAME}
