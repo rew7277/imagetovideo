@@ -12,78 +12,170 @@
       <div class="logo">FC</div>
       <div>
         <h1>FreeCut Studio</h1>
-        <p>Railway-ready video editor MVP</p>
+        <p>AI Background Removal · Video Editor</p>
       </div>
     </div>
     <a href="/health" class="chip">Health Check</a>
   </header>
 
   <main class="container">
-    <section class="hero">
-      <div>
-        <span class="pill">V7 Actual Railway Fix</span>
-        <h2>Edit videos online with a clean Canva-style starter.</h2>
-        <p>
-          Upload a video, trim, resize, mute audio, add caption text, and export MP4.
-          This package supports both app.py and backend/main.py start paths.
-        </p>
+
+    <!-- Tab Nav -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="bg-image">🖼 Image BG Removal</button>
+      <button class="tab" data-tab="bg-video">🎬 Video BG Removal</button>
+      <button class="tab" data-tab="editor">✂️ Video Editor</button>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════
+         TAB 1 · IMAGE BG REMOVAL
+    ═══════════════════════════════════════════════ -->
+    <section class="tab-panel active" id="tab-bg-image">
+      <div class="hero">
+        <div>
+          <span class="pill">AI Powered</span>
+          <h2>Remove image background instantly.</h2>
+          <p>Upload any photo (JPG, PNG, WEBP) and get a clean cut-out with full transparency or white background.</p>
+        </div>
+        <div class="card">
+          <div class="dropzone" id="imgDropzone">
+            <input id="imgFileInput" type="file" accept="image/*"/>
+            <strong>Drag & drop image here</strong>
+            <span>JPG · PNG · WEBP · BMP</span>
+          </div>
+          <img id="imgPreview" alt="Preview"/>
+        </div>
       </div>
 
-      <div class="card">
-        <video id="preview" controls muted></video>
-        <div class="dropzone" id="dropzone">
-          <input id="fileInput" type="file" accept="video/*"/>
-          <strong>Drag & drop video here</strong>
-          <span>or click to select file</span>
+      <div class="grid">
+        <div class="panel">
+          <h3>Options</h3>
+          <label>Output Format</label>
+          <select id="imgFormat">
+            <option value="png">PNG (transparent background)</option>
+            <option value="jpg">JPG (white background)</option>
+          </select>
+          <button id="imgSubmit">Remove Background</button>
+        </div>
+
+        <div class="panel result-panel" id="imgResult">
+          <h3>Result</h3>
+          <p id="imgStatus" class="muted">Upload an image to start.</p>
+          <div class="checkerboard-wrap">
+            <img id="imgResultImg" alt="Result"/>
+          </div>
+          <a id="imgDownload" download>⬇ Download</a>
         </div>
       </div>
     </section>
 
-    <section class="grid">
-      <form class="panel" id="editForm">
-        <h3>Video Editor</h3>
+    <!-- ═══════════════════════════════════════════════
+         TAB 2 · VIDEO BG REMOVAL
+    ═══════════════════════════════════════════════ -->
+    <section class="tab-panel" id="tab-bg-video">
+      <div class="hero">
+        <div>
+          <span class="pill">Frame by Frame AI</span>
+          <h2>Remove video background with AI.</h2>
+          <p>Our AI processes each frame individually using the U2-Net model. Short clips work best. Output can be green screen, solid colour, or transparent (WebM).</p>
+        </div>
+        <div class="card">
+          <video id="vidPreview" controls muted></video>
+          <div class="dropzone" id="vidDropzone">
+            <input id="vidFileInput" type="file" accept="video/*"/>
+            <strong>Drag & drop video here</strong>
+            <span>MP4 · MOV · AVI · MKV · WEBM</span>
+          </div>
+        </div>
+      </div>
 
-        <label>Start Time</label>
-        <input name="start_time" placeholder="00:00:02"/>
+      <div class="grid">
+        <div class="panel">
+          <h3>BG Removal Options</h3>
 
-        <label>End Time</label>
-        <input name="end_time" placeholder="00:00:15"/>
+          <label>Replace Background With</label>
+          <select id="vidBgColor">
+            <option value="green">Green Screen (chroma key)</option>
+            <option value="white">White</option>
+            <option value="black">Black</option>
+            <option value="transparent">Transparent – WebM alpha</option>
+          </select>
 
-        <label>Resize Width</label>
-        <input name="width" placeholder="720"/>
+          <label>Processing FPS (optional)</label>
+          <input id="vidFps" placeholder="Leave blank = auto (max 25 fps)"/>
+          <small class="muted">Lower FPS = faster processing. E.g. 10 for drafts.</small>
 
-        <label>Caption Text</label>
-        <input name="text" placeholder="My video title"/>
+          <div class="warn-box" id="vidWarn">
+            ⚠️ Video BG removal is CPU-intensive. Processing time depends on video length and FPS. Keep clips under 30 seconds for best results.
+          </div>
 
-        <label class="check">
-          <input name="mute" type="checkbox"/>
-          Mute audio
-        </label>
+          <button id="vidSubmit">Remove Background</button>
+        </div>
 
-        <button type="submit">Edit Video</button>
-      </form>
-
-      <form class="panel" id="bgForm">
-        <h3>Video Processor</h3>
-        <p class="muted">Converts uploaded video to browser-compatible MP4.</p>
-
-        <label>Mode</label>
-        <select name="mode">
-          <option value="convert">Convert only</option>
-        </select>
-
-        <button type="submit">Process Video</button>
-      </form>
+        <div class="panel result-panel" id="vidResult">
+          <h3>Result</h3>
+          <p id="vidStatus" class="muted">Upload a video to start.</p>
+          <video id="vidResultVideo" controls></video>
+          <a id="vidDownload" download>⬇ Download</a>
+        </div>
+      </div>
     </section>
 
-    <section class="result">
-      <h3>Result</h3>
-      <p id="status">Upload a video to start.</p>
-      <video id="resultVideo" controls></video>
-      <a id="downloadLink" download>Download Output</a>
+    <!-- ═══════════════════════════════════════════════
+         TAB 3 · VIDEO EDITOR
+    ═══════════════════════════════════════════════ -->
+    <section class="tab-panel" id="tab-editor">
+      <div class="hero">
+        <div>
+          <span class="pill">FFmpeg Powered</span>
+          <h2>Trim, resize, caption, mute.</h2>
+          <p>Upload a video, apply basic edits and export a clean MP4. No upload limits beyond your server disk.</p>
+        </div>
+        <div class="card">
+          <video id="editPreview" controls muted></video>
+          <div class="dropzone" id="editDropzone">
+            <input id="editFileInput" type="file" accept="video/*"/>
+            <strong>Drag & drop video here</strong>
+            <span>MP4 · MOV · AVI · MKV</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <h3>Edit Options</h3>
+
+          <label>Start Time</label>
+          <input id="startTime" placeholder="00:00:02"/>
+
+          <label>End Time</label>
+          <input id="endTime" placeholder="00:00:15"/>
+
+          <label>Resize Width (px)</label>
+          <input id="resizeWidth" placeholder="720"/>
+
+          <label>Caption Text</label>
+          <input id="captionText" placeholder="My video title"/>
+
+          <label class="check">
+            <input id="muteAudio" type="checkbox"/>
+            Mute audio
+          </label>
+
+          <button id="editSubmit">Edit Video</button>
+        </div>
+
+        <div class="panel result-panel" id="editResult">
+          <h3>Result</h3>
+          <p id="editStatus" class="muted">Upload a video to start.</p>
+          <video id="editResultVideo" controls></video>
+          <a id="editDownload" download>⬇ Download</a>
+        </div>
+      </div>
     </section>
+
   </main>
 
-<script src="/static/app.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>
